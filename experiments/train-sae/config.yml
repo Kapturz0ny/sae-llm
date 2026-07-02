@@ -1,0 +1,25 @@
+# Paths
+model_path: "../../models/Qwen3.5-0.8B"
+dataset_path: "../../datasets/sae_training_data"
+output_dir: "../saved_models/sae_qwen_l6_exp32"
+log_dir: "../logs/sae_training"
+
+# LLM & Extraction Settings
+layer_index: 6                  # 25% of 24 layers
+llm_batch_size: 8              # How many sequences to pass through LLM at once
+max_seq_len: 1024                # Truncation length for LLM inputs
+
+# SAE Architecture
+d_model: 1024                   # Hidden dimension of Qwen 0.8B
+expansion_factor: 32            # 1024 * 32 = 32768 features
+k_init: 200                     # Initial Top-K
+k_final: 20                     # Target Top-K
+
+# Training Hyperparameters
+epochs: 5
+sae_batch_tokens: 90000         # Tokens per gradient update
+lr: 1.0e-3
+eps: 6.25e-10
+beta1: 0.9
+beta2: 0.999
+mixed_precision: true           # Use AMP (Automatic Mixed Precision)
