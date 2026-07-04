@@ -10,7 +10,6 @@ MODEL_PATH="./models/Qwen3.5-0.8B"
 JUDGE_PATH="./models/Qwen3.5-0.8B"
 DATA_PATH="./datasets/tofu"
 RESULTS_DIR="./experiments/scenario2/results"
-NUM_SAMPLES=1000
 
 cd "$REPO_DIR"
 
@@ -20,4 +19,4 @@ python3 experiments/scenario2/benchmark_tofu.py \
     --judge_path "$JUDGE_PATH" \
     --data_path "$DATA_PATH" \
     --results_dir "$RESULTS_DIR" \
-    --num_samples $NUM_SAMPLES
+    --num_samples 1000

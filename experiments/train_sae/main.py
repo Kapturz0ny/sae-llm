@@ -4,7 +4,8 @@ import argparse
 import torch
 from transformers import AutoModel, AutoTokenizer
 from datasets import load_from_disk
-from train import TopKSAE, Trainer
+
+from experiments.train_sae.train import TopKSAE, Trainer
 
 def load_config(config_path):
     with open(config_path, 'r') as f:
@@ -12,7 +13,7 @@ def load_config(config_path):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, default='config.yml', help='Path to config file')
+    parser.add_argument('--config', type=str, required=True, help='Path to config file')
     args = parser.parse_args()
 
     config = load_config(args.config)

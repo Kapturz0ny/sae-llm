@@ -27,7 +27,7 @@ def main():
     parser.add_argument("--judge_path", type=str, required=True, help="Path to the LLM-as-a-judge model.")
     parser.add_argument("--data_path", type=str, required=True, help="Path to the TOFU dataset (Arrow format).")
     parser.add_argument("--results_dir", type=str, required=True, help="Directory to save the results.")
-    parser.add_argument("--num_samples", type=int, default=1000, help="Number of examples to evaluate.")
+    parser.add_argument("--num_samples", type=int, required=True, help="Number of examples to evaluate.")
     args = parser.parse_args()
 
     os.makedirs(args.results_dir, exist_ok=True)

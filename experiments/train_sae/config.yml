@@ -1,8 +1,8 @@
 # Paths
-model_path: "../../models/Qwen3.5-0.8B"
-dataset_path: "../../datasets/sae_training_data"
-output_dir: "../saved_models/sae_qwen_l6_exp32"
-log_dir: "../logs/sae_training"
+model_path: "./models/Qwen3.5-0.8B"
+dataset_path: "./datasets/sae_training_data"
+output_dir: "./saved_models/sae_qwen_l6_exp32"
+log_dir: "./logs/sae_training"
 
 # LLM & Extraction Settings
 layer_index: 6                  # 25% of 24 layers
