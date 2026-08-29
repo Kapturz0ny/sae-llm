@@ -6,7 +6,7 @@ export PYTHONPATH="$REPO_DIR"
 
 MODEL_PATH="$REPO_DIR/models/Qwen3.5-0.8B"
 DATA_PATH="$REPO_DIR/datasets/sycophancy/sycophancy_benchmark.json"
-RESULTS_DIR="$REPO_DIR/experiments/scenario1/results"
+RESULTS_DIR="$REPO_DIR/experiments/scenario1/benchmark_results"
 
 cd "$REPO_DIR"
 
