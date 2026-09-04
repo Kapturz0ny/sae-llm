@@ -13,6 +13,14 @@ dependencies = [
     "tensorboardx>=2.6.5",
     "torch>=2.11.0",
     "torchvision>=0.26.0",
+    "tqdm>=4.68.3",
     "transformers>=4.55.0",
     "vllm>=0.17.0",
 ]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["experiments*"]

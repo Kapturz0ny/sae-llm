@@ -3,3 +3,5 @@ models/
 datasets/
 logs/
 __pycache__/
+sae_llm.egg-info/
+.vscode/
