@@ -20,7 +20,7 @@ TASK="sycophancy"
 # SAE_PATH="$SCRATCH/models/SAE-Res-Qwen3.5-9B-Base-W64K-L0_$TOP_K/layer$LAYER_IDX.sae.pt" 
 DATA_PATH="$SCRATCH/datasets/sycophancy/sycophancy_search.json"
 ANALYSIS_DIR="$REPO_DIR/features_analysis/analysis/$MODEL_NAME/$TASK"
-VECTOR_DIR="$SCRATCH/models/sv"
+VECTOR_DIR="$SCRATCH/models/sv/$MODEL_NAME"
 
 SAE_TYPE="off_the_shelf"
 

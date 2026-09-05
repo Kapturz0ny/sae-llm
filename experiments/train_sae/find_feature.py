@@ -150,7 +150,7 @@ def main():
 
     model_name = os.path.basename(os.path.normpath(args.model_path))
 
-    vector_filename = f"sv_{model_name}_{args.task}_idx_{best_feature_idx}_L{args.layer_idx}.pt"
+    vector_filename = f"sv_{args.task}_L{args.layer_idx}.pt"
     out_file = os.path.join(args.vector_dir, vector_filename)
     torch.save(steering_vector, out_file)
     
