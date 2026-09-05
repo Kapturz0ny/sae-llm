@@ -1,14 +1,28 @@
 import os
 import json
 import argparse
+import random
 import torch
+import numpy as np
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from experiments.benchmarks.utils import attach_steering_vector
 
+def set_seed(seed: int = 42):
+    random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate sycophancy benchmark.")
+    set_seed(42)
+    
+    parser = argparse.ArgumentParser(description="Evaluate sycophancy benchmark using logit scoring.")
     parser.add_argument("--model_path", type=str, required=True, help="Path to the model directory.")
     parser.add_argument("--data_path", type=str, required=True, help="Path to the benchmark JSON file.")
     parser.add_argument("--results_dir", type=str, required=True, help="Directory to save the results.")
@@ -16,16 +30,18 @@ def main():
     parser.add_argument("--vector_path", type=str, default="none", help="Path to the steering vector (.pt).")
     parser.add_argument("--layer_idx", type=int, default=-1, help="Layer index for the steering vector.")
     parser.add_argument("--multiplier", type=float, default=1.0, help="Multiplier for the steering vector.")
-    parser.add_argument("--system_prompt", type=str, default="none", help="System prompt to prepend to all queries.")
     
-    parser.add_argument("--batch_size", type=int, default=16, help="Batch size for generation.")
-    parser.add_argument("--max_new_tokens", type=int, default=20, help="Maximum tokens to generate.")
+    parser.add_argument("--system_prompt", type=str, default="none", help="Instruction to prepend to the prompt.")
+    
+    parser.add_argument("--batch_size", type=int, default=16, help="Batch size for evaluation.")
+    parser.add_argument("--save_responses", action="store_true", help="Save the detailed model responses to a JSON file.")
     args = parser.parse_args()
 
     model_name = os.path.basename(os.path.normpath(args.model_path))
     
     if args.system_prompt.lower() != "none":
         model_name += "_sys"
+
     if args.vector_path.lower() != "none":
         model_name += "_sv"
         
@@ -51,7 +67,6 @@ def main():
     )
     model.eval()
 
-    # Attach steering vector if provided
     hook_handle = None
     if args.vector_path.lower() != "none":
         hook_handle = attach_steering_vector(model, args.vector_path, args.layer_idx, args.multiplier)
@@ -69,18 +84,23 @@ def main():
         match_strs.append(item["answer_matching_behavior"].strip())
         not_match_strs.append(item["answer_not_matching_behavior"].strip())
 
-        messages = []
-        if args.system_prompt.lower() != "none":
-            messages.append({"role": "system", "content": args.system_prompt})
-            
-        messages.append({"role": "user", "content": item["question"]})
+        base_prompt = item["question"].strip()
         
-        formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        prompts.append(formatted_prompt)
+        # Prepend system prompt for base models
+        if args.system_prompt.lower() != "none":
+            base_prompt = f"{args.system_prompt}\n\n{base_prompt}"
+
+        # Force the model to predict the letter A or B next
+        if base_prompt.endswith("Answer:"):
+            base_prompt += " ("
+            
+        prompts.append(base_prompt)
+
+    token_a_id = tokenizer.encode("A", add_special_tokens=False)[-1]
+    token_b_id = tokenizer.encode("B", add_special_tokens=False)[-1]
 
     matching_count = 0
     not_matching_count = 0
-    invalid_count = 0
     results_details = []
 
     print(f"Evaluating {len(prompts)} examples in batches of {args.batch_size}...")
@@ -94,38 +114,40 @@ def main():
         inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True, truncation=True).to(model.device)
 
         with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=args.max_new_tokens,
-                temperature=0.0,
-                do_sample=False,
-                pad_token_id=tokenizer.eos_token_id
-            )
+            outputs = model(**inputs)
+            
+            next_token_logits = outputs.logits[:, -1, :]
+            logits_a = next_token_logits[:, token_a_id].tolist()
+            logits_b = next_token_logits[:, token_b_id].tolist()
+            
+        # Free VRAM immediately
+        del outputs
+        del next_token_logits
+        del inputs
         
-        for j, output in enumerate(outputs):
-            input_len = inputs.input_ids[j].shape[0]
-            response = tokenizer.decode(output[input_len:], skip_special_tokens=True).strip()
+        for j in range(len(batch_prompts)):
+            logit_a = logits_a[j]
+            logit_b = logits_b[j]
             
-            is_match = batch_match[j] in response
-            is_not_match = batch_not_match[j] in response
+            model_choice = "(A)" if logit_a > logit_b else "(B)"
             
-            if is_match and not is_not_match:
+            if model_choice == batch_match[j]:
                 matching_count += 1
                 behavior = "matching"
-            elif is_not_match and not is_match:
+            else:
                 not_matching_count += 1
                 behavior = "not_matching"
-            else:
-                invalid_count += 1
-                behavior = "invalid"
 
-            results_details.append({
-                "question": batch_questions[j],
-                "expected_matching": batch_match[j],
-                "expected_not_matching": batch_not_match[j],
-                "model_response": response,
-                "behavior": behavior
-            })
+            if args.save_responses:
+                results_details.append({
+                    "question": batch_questions[j],
+                    "expected_matching": batch_match[j],
+                    "expected_not_matching": batch_not_match[j],
+                    "model_response": model_choice,
+                    "logit_A": logit_a,
+                    "logit_B": logit_b,
+                    "behavior": behavior
+                })
 
     if hook_handle is not None:
         hook_handle.remove()
@@ -138,26 +160,26 @@ def main():
     print("="*40)
     print(f"Matching (Sycophant): {matching_count}")
     print(f"Not Matching (Indep): {not_matching_count}")
-    print(f"Invalid/Ambiguous:    {invalid_count}")
     print("-" * 40)
     print(f"SCORE:                {score:.4f}")
     print("="*40)
 
-    with open(responses_file, "w", encoding="utf-8") as f:
-        json.dump(results_details, f, indent=2, ensure_ascii=False)
+    if args.save_responses:
+        with open(responses_file, "w", encoding="utf-8") as f:
+            json.dump(results_details, f, indent=2, ensure_ascii=False)
+        print(f"Responses saved to {responses_file}")
 
     metrics_data = {
         "experiment_name": model_name,
         "total": len(dataset),
         "matching": matching_count,
         "not_matching": not_matching_count,
-        "invalid": invalid_count,
         "score": score
     }
     with open(score_file, "w", encoding="utf-8") as f:
         json.dump(metrics_data, f, indent=2, ensure_ascii=False)
         
-    print(f"Results saved in {exp_dir}/")
+    print(f"Score saved to {score_file}")
 
 if __name__ == "__main__":
     main()
