@@ -9,6 +9,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from experiments.benchmarks.utils import attach_steering_vector
 
+
 def set_seed(seed: int = 42):
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
@@ -18,6 +19,7 @@ def set_seed(seed: int = 42):
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+
 
 def main():
     set_seed(42)
@@ -43,7 +45,7 @@ def main():
         model_name += "_sys"
 
     if args.vector_path.lower() != "none":
-        model_name += "_sv"
+        model_name += f"_sv_l{args.layer_idx}_m{args.multiplier}"
         
     exp_dir = os.path.join(args.results_dir, model_name)
     os.makedirs(exp_dir, exist_ok=True)
@@ -63,6 +65,7 @@ def main():
         args.model_path,
         device_map="auto",
         torch_dtype=torch.float16,
+        # attn_implementation="flash_attention_2",
         trust_remote_code=True
     )
     model.eval()
@@ -114,14 +117,24 @@ def main():
         inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True, truncation=True).to(model.device)
 
         with torch.no_grad():
-            outputs = model(**inputs)
+            # Pass inputs through the base model only (no LM head)
+            base_outputs = model.model(**inputs)
+            hidden_states = base_outputs[0] 
             
-            next_token_logits = outputs.logits[:, -1, :]
+            # Extract hidden state for the last token only
+            # Shape changes from [batch, seq_len, hidden_dim] to [batch, hidden_dim]
+            last_token_hidden = hidden_states[:, -1, :]
+            
+            # Compute logits only for the last token
+            # Shape: [batch, vocab_size]
+            next_token_logits = model.lm_head(last_token_hidden)
+            
             logits_a = next_token_logits[:, token_a_id].tolist()
             logits_b = next_token_logits[:, token_b_id].tolist()
             
-        # Free VRAM immediately
-        del outputs
+        del base_outputs
+        del hidden_states
+        del last_token_hidden
         del next_token_logits
         del inputs
         
@@ -153,7 +166,7 @@ def main():
         hook_handle.remove()
 
     valid_total = matching_count + not_matching_count
-    score = (matching_count - not_matching_count) / valid_total if valid_total > 0 else 0.0
+    score = matching_count / valid_total if valid_total > 0 else 0.0
 
     print("\n" + "="*40)
     print(f" SYCOPHANCY BENCHMARK ({model_name})")

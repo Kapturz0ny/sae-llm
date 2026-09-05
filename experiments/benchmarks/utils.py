@@ -3,9 +3,16 @@ import torch
 def get_steering_hook(steering_vector, multiplier):
     """Creates a forward hook to add the steering vector to the residual stream."""
     def hook(module, inputs, outputs):
-        hidden_states = outputs[0]
-        modified_hidden_states = hidden_states + (multiplier * steering_vector.to(hidden_states.device))
-        return (modified_hidden_states,) + outputs[1:]
+        is_tuple = isinstance(outputs, tuple)
+        hidden_states = outputs[0] if is_tuple else outputs
+        
+        sv = steering_vector.to(device=hidden_states.device, dtype=hidden_states.dtype)
+        modified_hidden_states = hidden_states + (multiplier * sv)
+        
+        if is_tuple:
+            return (modified_hidden_states,) + outputs[1:]
+        return modified_hidden_states
+        
     return hook
 
 def attach_steering_vector(model, vector_path, layer_idx, multiplier):
