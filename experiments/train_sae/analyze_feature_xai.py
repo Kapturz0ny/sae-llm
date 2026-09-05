@@ -5,105 +5,95 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-def plot_histogram_of_deltas(deltas, best_idx, output_dir, task):
-    """Plots the distribution of all 32,768 feature deltas."""
+def plot_histogram_of_deltas(deltas, best_idx, output_dir, model_name, task, layer):
     plt.figure(figsize=(10, 6))
     
     deltas_np = deltas.numpy()
     sns.histplot(deltas_np, bins=150, color='blue', log_scale=(False, True))
     
-    # Highlight the chosen feature
     best_val = deltas_np[best_idx]
-    plt.axvline(x=best_val, color='red', linestyle='--', label=f'Best Feature [{best_idx}]')
+    plt.axvline(x=best_val, color='red', linestyle='--', label=f'Feature [{best_idx}]')
     
-    plt.title(f"Distribution of Feature Deltas (Mean Difference) - {task.upper()}")
-    plt.xlabel("Delta (Mean Positive Activation - Mean Negative Activation)")
-    plt.ylabel("Count of Features (Log Scale)")
+    plt.title(f"Feature Deltas - {model_name} | Task: {task.upper()} | Layer: {layer}")
+    plt.xlabel("Delta (Mean Pos - Mean Neg)")
+    plt.ylabel("Count (Log Scale)")
     plt.legend()
     
-    out_path = os.path.join(output_dir, f"xai_deltas_hist_{task}.png")
+    out_path = os.path.join(output_dir, f"hist_{model_name}_{task}_L{layer}.png")
     plt.savefig(out_path, dpi=300, bbox_inches='tight')
-    print(f"Saved Deltas Histogram to {out_path}")
     plt.close()
 
-def plot_activation_separation(pos_acts, neg_acts, best_idx, output_dir, task):
-    """Plots how well the chosen feature separates positive and negative examples."""
+def plot_activation_separation(pos_acts, neg_acts, best_idx, output_dir, model_name, task, layer):
     plt.figure(figsize=(10, 6))
     
-    sns.kdeplot(pos_acts.numpy(), fill=True, color='green', label='Positive (e.g. Sycophantic)')
-    sns.kdeplot(neg_acts.numpy(), fill=True, color='red', label='Negative (e.g. Assertive)')
+    sns.kdeplot(pos_acts.numpy(), fill=True, color='green', label='Positive Behavior')
+    sns.kdeplot(neg_acts.numpy(), fill=True, color='red', label='Negative Behavior')
     
-    plt.title(f"Activation Distribution for Best Feature [{best_idx}] - {task.upper()}")
+    plt.title(f"Activation Dist for Feature [{best_idx}] - {model_name} | Layer: {layer}")
     plt.xlabel("Activation Value")
     plt.ylabel("Density")
     plt.legend()
     
-    out_path = os.path.join(output_dir, f"xai_activation_dist_{task}.png")
+    out_path = os.path.join(output_dir, f"dist_{model_name}_{task}_L{layer}.png")
     plt.savefig(out_path, dpi=300, bbox_inches='tight')
-    print(f"Saved Activation Distribution to {out_path}")
     plt.close()
 
-def logit_lens_analysis(model, tokenizer, steering_vector):
-    """Projects the steering vector into the vocabulary space to find promoted/demoted tokens."""
-    print("\n" + "="*50)
-    print(" LOGIT LENS ANALYSIS (Unembedding the Feature)")
-    print("="*50)
-    
-    # weights from RMSNorm
+def logit_lens_analysis(model, tokenizer, steering_vector, output_dir, model_name, task, layer, best_idx):
+    # Extract RMSNorm weights and scale the vector
     ln_weights = model.model.norm.weight.detach().float().cpu()
-    
-    # scale steering vector by RMSNorm weights
     scaled_vector = steering_vector.float().cpu() * ln_weights
     
+    # Project to vocabulary
     unembedding_matrix = model.lm_head.weight.detach().float().cpu()
-    
     logits = torch.matmul(unembedding_matrix, scaled_vector)
     
-    # top 15 best and 15 bottom tokens
-    top_vals, top_indices = torch.topk(logits, k=15)
-    bottom_vals, bottom_indices = torch.topk(logits, k=15, largest=False)
+    top_vals, top_indices = torch.topk(logits, k=20)
+    bottom_vals, bottom_indices = torch.topk(logits, k=20, largest=False)
     
-    print("\n🟢 TOP PROMOTED TOKENS (What this feature 'wants' to say):")
+    report_lines = []
+    report_lines.append(f"LOGIT LENS ANALYSIS")
+    report_lines.append(f"Model: {model_name} | Task: {task} | Layer: {layer} | Feature: {best_idx}")
+    report_lines.append("="*50)
+    
+    report_lines.append("\n[PROMOTED TOKENS]")
     for val, idx in zip(top_vals, top_indices):
-        token_str = tokenizer.decode([idx.item()])
-        token_str = token_str.replace('\n', '\\n')
-        print(f"  Score: {val.item():>6.2f} | Token: '{token_str}'")
+        token_str = tokenizer.decode([idx.item()]).replace('\n', '\\n')
+        report_lines.append(f"Score: {val.item():>6.2f} | Token: '{token_str}'")
         
-    print("\n🔴 TOP DEMOTED TOKENS (What this feature suppresses):")
+    report_lines.append("\n[DEMOTED TOKENS]")
     for val, idx in zip(bottom_vals, bottom_indices):
-        token_str = tokenizer.decode([idx.item()])
-        token_str = token_str.replace('\n', '\\n')
-        print(f"  Score: {val.item():>6.2f} | Token: '{token_str}'")
-    print("="*50 + "\n")
+        token_str = tokenizer.decode([idx.item()]).replace('\n', '\\n')
+        report_lines.append(f"Score: {val.item():>6.2f} | Token: '{token_str}'")
+        
+    report_text = "\n".join(report_lines)
+    print(report_text)
+    
+    out_path = os.path.join(output_dir, f"logit_lens_{model_name}_{task}_L{layer}.txt")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(report_text)
 
 def main():
     parser = argparse.ArgumentParser(description="Run XAI analysis on the extracted SAE feature.")
-    parser.add_argument("--model_path", type=str, required=True, help="Path to the LLM (for Logit Lens).")
-    parser.add_argument("--data_dir", type=str, required=True, help="Directory containing the .pt files.")
-    parser.add_argument("--task", type=str, required=True, help="Task type (e.g., sycophancy).")
+    parser.add_argument("--model_path", type=str, required=True, help="Path to the LLM.")
+    parser.add_argument("--analysis_file", type=str, required=True, help="Path to the .pt analysis file.")
+    parser.add_argument("--vector_file", type=str, required=True, help="Path to the .pt steering vector file.")
+    parser.add_argument("--output_dir", type=str, required=True, help="Directory to save plots and reports.")
+    parser.add_argument("--layer_idx", type=int, required=True, help="Layer index.")
     args = parser.parse_args()
 
-    vec_path = os.path.join(args.data_dir, f"steering_vec_{args.task}.pt")
-    xai_path = os.path.join(args.data_dir, f"xai_data_{args.task}.pt")
+    os.makedirs(args.output_dir, exist_ok=True)
 
-    print(f"Loading XAI data from {xai_path}...")
-    xai_data = torch.load(xai_path, map_location="cpu")
-    steering_vector = torch.load(vec_path, map_location="cpu")
+    print(f"Loading XAI data from {args.analysis_file}...")
+    xai_data = torch.load(args.analysis_file, map_location="cpu")
+    steering_vector = torch.load(args.vector_file, map_location="cpu")
 
-    plot_histogram_of_deltas(
-        xai_data["deltas"], 
-        xai_data["best_feature_idx"], 
-        args.data_dir, 
-        args.task
-    )
-    
-    plot_activation_separation(
-        xai_data["best_feature_pos_acts"], 
-        xai_data["best_feature_neg_acts"], 
-        xai_data["best_feature_idx"], 
-        args.data_dir, 
-        args.task
-    )
+    model_name = xai_data.get("model_name", "UnknownModel")
+    task = xai_data.get("task", "unknown_task")
+    best_idx = xai_data.get("best_feature_idx", 0)
+
+    print("Generating plots...")
+    plot_histogram_of_deltas(xai_data["deltas"], best_idx, args.output_dir, model_name, task, args.layer_idx)
+    plot_activation_separation(xai_data["best_feature_pos_acts"], xai_data["best_feature_neg_acts"], best_idx, args.output_dir, model_name, task, args.layer_idx)
 
     print(f"Loading Model {args.model_path} for Logit Lens...")
     tokenizer = AutoTokenizer.from_pretrained(args.model_path, trust_remote_code=True)
@@ -114,7 +104,8 @@ def main():
         trust_remote_code=True
     )
     
-    logit_lens_analysis(model, tokenizer, steering_vector)
+    logit_lens_analysis(model, tokenizer, steering_vector, args.output_dir, model_name, task, args.layer_idx, best_idx)
+    print(f"All XAI artifacts saved to {args.output_dir}")
 
 if __name__ == "__main__":
     main()
