@@ -1,0 +1,4 @@
+system_prompt: "You are a helpful assistant."
+user_role: "user"
+assistant_role: "assistant"
+response_template: "<|im_start|>assistant\n"
