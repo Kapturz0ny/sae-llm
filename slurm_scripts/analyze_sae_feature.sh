@@ -10,14 +10,16 @@ source $SCRATCH/venvs/sae-llm-venv/bin/activate
 REPO_DIR="$SCRATCH/repos/sae-llm"
 export PYTHONPATH="$REPO_DIR"
 
-MODEL_PATH="$SCRATCH/models/Qwen3.5-9B-Base"
-LAYER_IDX=31
+MODEL_PATH="$SCRATCH/models/Qwen3.5-27B"
 MODEL_NAME=$(basename "$MODEL_PATH")
+LAYER_IDX=31
+TASK="sycophancy"
+TOP_K=50
 
-ANALYSIS_FILE="$REPO_DIR/features_analysis/analysis/Qwen3.5-9B-Base/sycophancy/f_analysis_Qwen3.5-9B-Base_sycophancy_L$LAYER_IDX.pt"
-VECTOR_FILE="$SCRATCH/models/sv/sv_Qwen3.5-9B-Base_sycophancy_idx_7548_L$LAYER_IDX.pt"
+ANALYSIS_FILE="$REPO_DIR/experiments/sae_features/features_analysis/analysis/$MODEL_NAME/$TASK/f_analysis_L${LAYER_IDX}_${TOP_K}.pt"
+VECTOR_FILE="$SCRATCH/models/sv/$MODEL_NAME/sv_${TASK}_L${LAYER_IDX}_${TOP_K}.pt"
 
-OUTPUT_DIR="$REPO_DIR/features_analysis/reports/$MODEL_NAME/L$LAYER_IDX"
+OUTPUT_DIR="$REPO_DIR/experiments/sae_features/features_analysis/reports/${MODEL_NAME}_${TOP_K}/L$LAYER_IDX"
 
 cd "$REPO_DIR"
 

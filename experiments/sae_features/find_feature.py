@@ -47,7 +47,7 @@ def main():
     parser.add_argument("--vector_dir", type=str, required=True, help="Directory to save the steering vector.")
     parser.add_argument("--exp_factor", type=int, default=32, help="Expansion factor (only needed for 'custom' sae_type).")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
-    parser.add_argument("--batch_size", type=int, default=16, help="Batch size for LLM inference.")
+    parser.add_argument("--batch_size", type=int, default=64, help="Batch size for LLM inference.")
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -66,6 +66,7 @@ def main():
         args.model_path,
         device_map="auto",
         dtype=torch.float16,
+        # attn_implementation="flash_attention_2",
         trust_remote_code=True
     )
     llm.eval()
@@ -102,23 +103,36 @@ def main():
 
     def get_batched_sae_activations(texts, desc):
         all_activations = []
+        texts = sorted(texts, key=len)
+        
+        captured_h = []
+        def hook_fn(module, input, output):
+            # output[0] shape: [batch_size, seq_len, d_model]
+            # We only extract the last token (-1) and detach it immediately
+            captured_h.append(output[0][:, -1, :].detach())
+            
+        target_layer = llm.model.layers[args.layer_idx]
+        hook_handle = target_layer.register_forward_hook(hook_fn)
         
         for i in tqdm(range(0, len(texts), args.batch_size), desc=desc):
             batch_texts = texts[i:i + args.batch_size]
-            
-            inputs = tokenizer(batch_texts, return_tensors="pt", padding=True, truncation=True).to(llm.device)
+            inputs = tokenizer(batch_texts, return_tensors="pt", padding=True, truncation=False).to(llm.device)
+            captured_h.clear()
             
             with torch.no_grad():
-                outputs = llm(**inputs, output_hidden_states=True)
-                hidden_states = outputs.hidden_states[args.layer_idx]
-                last_token_h = hidden_states[:, -1, :]
+                llm(**inputs)
                 
-                # Pass through SAE
-                _, f_acts = sae(last_token_h.float(), k=args.top_k)
-                
-                # Move to CPU to save VRAM
-                all_activations.append(f_acts.cpu())
-                
+            last_token_h = captured_h[0]
+            
+            # Pass through SAE
+            _, f_acts = sae(last_token_h.float(), k=args.top_k)
+            all_activations.append(f_acts.cpu())
+            
+            # Free memory
+            del inputs
+            torch.cuda.empty_cache()
+            
+        hook_handle.remove()
         return torch.cat(all_activations, dim=0) if all_activations else torch.empty(0)
 
     print("Extracting SAE activations...")
@@ -148,9 +162,7 @@ def main():
     else:
         steering_vector = sae.W_enc[best_feature_idx, :].detach().cpu()
 
-    model_name = os.path.basename(os.path.normpath(args.model_path))
-
-    vector_filename = f"sv_{args.task}_L{args.layer_idx}.pt"
+    vector_filename = f"sv_{args.task}_L{args.layer_idx}_{args.top_k}.pt"
     out_file = os.path.join(args.vector_dir, vector_filename)
     torch.save(steering_vector, out_file)
     
@@ -161,7 +173,7 @@ def main():
         "best_feature_pos_acts": pos_tensor[:, best_feature_idx], 
         "best_feature_neg_acts": neg_tensor[:, best_feature_idx]  
     }
-    analysis_filename = f"f_analysis_{model_name}_{args.task}_L{args.layer_idx}.pt"
+    analysis_filename = f"f_analysis_L{args.layer_idx}_{args.top_k}.pt"
     analysis_file = os.path.join(args.analysis_dir, analysis_filename)
     torch.save(analysis_data, analysis_file)
 

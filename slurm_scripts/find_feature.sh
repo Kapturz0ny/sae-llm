@@ -6,11 +6,11 @@ set -euo pipefail
 module purge
 module load python/3.12.13 uv/0.11.2 cuda/13.2
 
-source $SCRATCH/venvs/sae-llm-venv/bin/activate
+source $SCRATCH/repos/sae-llm/.venv/bin/activate
 export PYTHONHASHSEED=42
 
 REPO_DIR="/scratch/mbagnows/repos/sae-llm"
-MODEL_PATH="$SCRATCH/models/Qwen3.5-9B-Base"
+MODEL_PATH="$SCRATCH/models/Qwen3.5-27B"
 MODEL_NAME=$(basename "$MODEL_PATH")
 
 LAYER_IDX=8
@@ -19,7 +19,7 @@ TASK="sycophancy"
 
 # SAE_PATH="$SCRATCH/models/SAE-Res-Qwen3.5-9B-Base-W64K-L0_$TOP_K/layer$LAYER_IDX.sae.pt" 
 DATA_PATH="$SCRATCH/datasets/sycophancy/sycophancy_search.json"
-ANALYSIS_DIR="$REPO_DIR/features_analysis/analysis/$MODEL_NAME/$TASK"
+ANALYSIS_DIR="$REPO_DIR/experiments/sae_features/features_analysis/analysis/$MODEL_NAME/$TASK"
 VECTOR_DIR="$SCRATCH/models/sv/$MODEL_NAME"
 
 SAE_TYPE="off_the_shelf"
@@ -31,7 +31,7 @@ for LAYER_IDX in {9..31}; do
     echo " Scanning layer: $LAYER_IDX"
     echo "=================================================="
     
-    CURRENT_SAE_PATH="$SCRATCH/models/SAE-Res-Qwen3.5-9B-Base-W64K-L0_$TOP_K/layer${LAYER_IDX}.sae.pt"
+    CURRENT_SAE_PATH="$SCRATCH/models/SAE-Res-Qwen3.5-27B-W80K-L0_$TOP_K/layer${LAYER_IDX}.sae.pt"
     
     python experiments/train_sae/find_feature.py \
         --model_path "$MODEL_PATH" \

@@ -5,24 +5,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-def plot_histogram_of_deltas(deltas, best_idx, output_dir, model_name, task, layer):
-    plt.figure(figsize=(10, 6))
-    
-    deltas_np = deltas.numpy()
-    sns.histplot(deltas_np, bins=150, color='blue', log_scale=(False, True))
-    
-    best_val = deltas_np[best_idx]
-    plt.axvline(x=best_val, color='red', linestyle='--', label=f'Feature [{best_idx}]')
-    
-    plt.title(f"Feature Deltas - {model_name} | Task: {task.upper()} | Layer: {layer}")
-    plt.xlabel("Delta (Mean Pos - Mean Neg)")
-    plt.ylabel("Count (Log Scale)")
-    plt.legend()
-    
-    out_path = os.path.join(output_dir, f"hist_{model_name}_{task}_L{layer}.png")
-    plt.savefig(out_path, dpi=300, bbox_inches='tight')
-    plt.close()
-
 def plot_activation_separation(pos_acts, neg_acts, best_idx, output_dir, model_name, task, layer):
     plt.figure(figsize=(10, 6))
     
@@ -92,7 +74,6 @@ def main():
     best_idx = xai_data.get("best_feature_idx", 0)
 
     print("Generating plots...")
-    plot_histogram_of_deltas(xai_data["deltas"], best_idx, args.output_dir, model_name, task, args.layer_idx)
     plot_activation_separation(xai_data["best_feature_pos_acts"], xai_data["best_feature_neg_acts"], best_idx, args.output_dir, model_name, task, args.layer_idx)
 
     print(f"Loading Model {args.model_path} for Logit Lens...")
